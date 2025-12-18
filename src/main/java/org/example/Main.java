@@ -164,8 +164,10 @@ public class Main {
     public static String incrementViaThreadPoolExecutor(int limit) throws InterruptedException, ExecutionException {
         ThreadPoolIncrementator incrementator = new ThreadPoolIncrementator(limit);
         CallableTask task = new CallableTask(incrementator);
-        ThreadPoolExecutor executor = new ThreadPoolExecutor(10, 10, 30, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(5),
+        int cores = Runtime.getRuntime().availableProcessors();
+        System.out.println("Кількість ядер процесора = " + cores);
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(cores, cores, 30, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(cores),
                 new ThreadFactory() {
                     private AtomicInteger counter = new AtomicInteger(1);
 
@@ -182,7 +184,7 @@ public class Main {
 
         //Запуск потоків
         List<Future<ThreadResult>> futures = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < cores; i++) {
             Future executedTask = executor.submit(task);
             futures.add(executedTask);
         }
