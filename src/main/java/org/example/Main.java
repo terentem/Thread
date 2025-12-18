@@ -1,38 +1,43 @@
 package org.example;
 
+import org.example.model.CallableTask;
 import org.example.model.ThreadResult;
 import org.example.utils.PrimitiveIncrementator;
 import org.example.utils.StrongIncrementator;
 import org.example.utils.ThreadPoolIncrementator;
 import org.example.utils.WeakIncrementator;
-import org.openjdk.jol.info.ClassLayout;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     public static void main(String[] args) throws InterruptedException, ExecutionException {
         String incrementedResult1 = incrementValueWithNoTreads(100);
-        System.out.println("Результат виклику PrimitiveIncrementator: " + incrementedResult1);
+        System.out.println("Результат виклику incrementValueWithNoThreads: " + incrementedResult1);
         System.out.println("******************************************************");
 
         String incrementedResult2 = incrementValueAddTreads(1000);
-        System.out.println("Результат виклику примітивного PrimitiveIncrementator+threads: " + incrementedResult2);
+        System.out.println("Результат виклику примітивного incrementValueAddThreads: " + incrementedResult2);
         System.out.println("******************************************************");
 
         String incrementedResult3 = incrementWithSynchronizedThread(1000);
-        System.out.println("Результат виклику  WeakIncrementator: " + incrementedResult3);
+        System.out.println("Результат виклику  incrementWithSynchronizedThread: " + incrementedResult3);
         System.out.println("******************************************************");
 
         String incrementedResult4 = incrementWithStrongIncrementator(1000);
-        System.out.println("Результат виклику StrongIncrementator: " + incrementedResult4);
+        System.out.println("Результат виклику incrementWithStrongIncrementator: " + incrementedResult4);
         System.out.println("******************************************************");
 
         String incrementedResult5 = incrementViaThreadPool(10000000);
-        System.out.println("Результат виклику ThreadPoolIncrementator: " + incrementedResult5);
+        System.out.println("Результат виклику incrementViaThreadPool: " + incrementedResult5);
+        System.out.println("******************************************************");
 
+        String incrementedResult6 = incrementViaThreadPoolExecutor(10000000);
+        System.out.println("Результат виклику incrementViaThreadPoolExecutor: " + incrementedResult6);
+        System.out.println("******************************************************");
     }
 
     public static String incrementValueWithNoTreads(int limit) {
@@ -90,8 +95,6 @@ public class Main {
         StrongIncrementator strongIncrementator = new StrongIncrementator(limit);
 
         Runnable task = new Runnable() {
-
-
             @Override
             public void run() {
                 while (strongIncrementator.checkThenDoIncrement()) {
@@ -106,7 +109,7 @@ public class Main {
         t2.join();
         System.out.println("******************************************************");
         System.out.println("Monitor obj:");
-        System.out.println(ClassLayout.parseInstance(strongIncrementator).toPrintable());
+        //System.out.println(ClassLayout.parseInstance(strongIncrementator).toPrintable());
         return "Значення value досягло " + strongIncrementator.getValue() + " двома синхронізованими (StrongIncrementator) потоками за " + strongIncrementator.getCountIncrements() + " ітерацій додавання +1." + "t1Job= " + strongIncrementator.getT1Job() + ", t2Job= " + strongIncrementator.getT2Job();
     }
 
@@ -126,7 +129,7 @@ public class Main {
             }
         };
 
-        //Створюємо "шаблон" для роботи з потоками
+        //Підготовчі кроки перед створенням потоків
         ExecutorService pool = Executors.newFixedThreadPool(
                 10,
                 new ThreadFactory() {
@@ -147,7 +150,6 @@ public class Main {
         pool.shutdown();
         pool.awaitTermination(1, TimeUnit.MINUTES);
         int totalWork = 0;
-
         for (Future<ThreadResult> future : futures) {
             ThreadResult result = future.get();
             totalWork += result.getCountIterations();
@@ -157,6 +159,49 @@ public class Main {
         }
         System.out.println("******************************************************");
         return "Значення value =" + incrementator.getValue() + " досягнуто синхронізованими потоками ThreadPool за " + totalWork + " ітерацій.";
+    }
+
+    public static String incrementViaThreadPoolExecutor(int limit) throws InterruptedException, ExecutionException {
+        ThreadPoolIncrementator incrementator = new ThreadPoolIncrementator(limit);
+        CallableTask task = new CallableTask(incrementator);
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(10, 10, 30, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(5),
+                new ThreadFactory() {
+                    private AtomicInteger counter = new AtomicInteger(1);
+
+                    @Override
+                    public Thread newThread(Runnable r) {
+                        return new Thread(
+                                r,
+                                "thread" + counter.getAndIncrement()
+                        );
+                    }
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+
+        //Запуск потоків
+        List<Future<ThreadResult>> futures = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            Future executedTask = executor.submit(task);
+            futures.add(executedTask);
+        }
+
+        //Зупиняємо потоки
+        executor.shutdown();
+        executor.awaitTermination(1, TimeUnit.MINUTES);
+
+        //Результати роботи кожного потоку
+        System.out.println("******************************************************");
+        System.out.println("Деталі роботи потоків за методом ThreadPoolExecutor");
+        int totalIncrements = 0;
+        for (Future<ThreadResult> f : futures) {
+            ThreadResult result = f.get();
+            totalIncrements += result.getCountIterations();
+            System.out.println(result.getThreadName() + " виконав " + result.getCountIterations() + " ітерацій інкременту.");
+        }
+        System.out.println("******************************************************");
+        return "Значення value = " + incrementator.getValue() + " досяглось за " + totalIncrements + " ітерацій інкрементування.";
     }
 }
 
